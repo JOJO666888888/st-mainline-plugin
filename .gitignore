@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+index.js
+
+# 编辑器
+.idea/
+.vscode/
+*.log
+
+# 操作系统
+.DS_Store
+Thumbs.db

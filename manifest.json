@@ -1,0 +1,12 @@
+{
+    "display_name": "ST·主线设计",
+    "loading_order": 300,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "",
+    "author": "Trae (AI Assisted)",
+    "version": "0.1.0",
+    "homePage": "",
+    "auto_update": false
+}
