@@ -37,9 +37,6 @@ const PANEL_TITLE = '主线设计';
 /** 最长等待宿主就绪的时间（毫秒） */
 const MAX_WAIT_MS = 15000;
 
-/** 面板展开/收起状态在 localStorage 中的键（纯 UI 偏好；v2：默认收起） */
-const COLLAPSED_STORAGE_KEY = 'stml:panel:collapsed:v2';
-
 /**
  * 等待宿主就绪：轮询 window.SillyTavern.getContext 是否可用（并可读到
  * extensionSettings），最长 MAX_WAIT_MS。与 shujuku 相同，TavernHelper /
@@ -71,9 +68,9 @@ async function waitForHost(maxWaitMs: number): Promise<boolean> {
 
 /**
  * 安装可展开/收起的悬浮面板：
- * - 收起态：右下角一个小圆钮（#st-mainline-toggle，文字"主线"）。
+ * - 收起态（默认）：右下角一个小圆钮（#st-mainline-toggle，文字"主线"）。
  * - 展开态：悬浮窗（#st-mainline-panel，标题栏 + 页签栏，标题右侧「收起」按钮）。
- * 展开/收起偏好存 localStorage（stml:panel:collapsed），刷新后保持一致。
+ * 每次加载页面固定默认收起为小球（不持久化展开状态）。
  * 两元素共用同一显隐开关（受设置 enabled 控制）。
  */
 function installPanel(): void {
@@ -83,32 +80,16 @@ function installPanel(): void {
   // 幂等：已存在则跳过
   if (doc.getElementById(MAINLINE_PANEL_ID) || doc.getElementById(MAINLINE_TOGGLE_ID)) return;
 
-  // 默认收起（true），只有用户显式展开过（localStorage 存 '0'）才默认展开
-  const readCollapsed = (): boolean => {
-    try {
-      return localStorage.getItem(COLLAPSED_STORAGE_KEY) !== '0';
-    } catch {
-      return true;
-    }
-  };
-  const writeCollapsed = (collapsed: boolean): void => {
-    try {
-      localStorage.setItem(COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
-    } catch {
-      /* 无痕/禁用 localStorage 时静默忽略 */
-    }
-  };
-
+  // 展开/收起只改显隐，不持久化：每次加载页面一律默认收起成小球（用户要求的行为）
   const applyCollapsed = (collapsed: boolean): void => {
     panel.style.display = collapsed ? 'none' : '';
     toggle.style.display = collapsed ? '' : 'none';
-    writeCollapsed(collapsed);
   };
 
-  // ---- 收起态小圆钮 ----
+  // ---- 收起态小圆钮（支持自由拖拽）----
   const toggle = doc.createElement('button');
   toggle.id = MAINLINE_TOGGLE_ID;
-  toggle.title = '展开「主线设计」面板';
+  toggle.title = '点击展开「主线设计」面板，可拖拽移动';
   toggle.textContent = '主线';
   toggle.style.position = 'fixed';
   toggle.style.bottom = '16px';
@@ -122,9 +103,113 @@ function installPanel(): void {
   toggle.style.color = '#e8e8ec';
   toggle.style.fontSize = '13px';
   toggle.style.fontFamily = 'inherit';
-  toggle.style.cursor = 'pointer';
+  toggle.style.cursor = 'grab';
+  toggle.style.userSelect = 'none';
+  toggle.style.touchAction = 'none';
   toggle.style.boxShadow = '0 4px 16px rgba(0,0,0,0.35)';
-  toggle.addEventListener('click', () => applyCollapsed(false));
+
+  // 小球位置记忆（仅球的位置，不影响“默认收起”行为；不可用时忽略）
+  const BALL_POS_KEY = 'stml:ball:pos';
+  const readBallPos = (): { x: number; y: number } | null => {
+    try {
+      const raw = localStorage.getItem(BALL_POS_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed as { x: number; y: number };
+      return null;
+    } catch {
+      return null;
+    }
+  };
+  const writeBallPos = (x: number, y: number): void => {
+    try {
+      localStorage.setItem(BALL_POS_KEY, JSON.stringify({ x: Math.round(x), y: Math.round(y) }));
+    } catch {
+      /* 不可用时静默忽略 */
+    }
+  };
+  /** 用 left/top 定位小球（此后 bottom/right 不再生效）。 */
+  const positionToggle = (x: number, y: number): void => {
+    toggle.style.left = `${x}px`;
+    toggle.style.top = `${y}px`;
+    toggle.style.bottom = 'auto';
+    toggle.style.right = 'auto';
+    writeBallPos(x, y);
+  };
+
+  // 恢复上次拖拽位置；无记录时保持右下角（bottom/right 定位）
+  const savedPos = readBallPos();
+  if (savedPos) positionToggle(savedPos.x, savedPos.y);
+
+  // 拖拽实现：pointer 事件 + setPointerCapture。
+  // 按下→移动超过阈值算拖拽（只移动不展开）；松开且位移很小视为点击（展开面板）。
+  let dragging = false;
+  let moved = false;
+  let startClientX = 0;
+  let startClientY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+  const DRAG_THRESHOLD = 5; // 位移超过 5px 判定为拖拽，否则是点击
+
+  toggle.addEventListener('pointerdown', (event: PointerEvent) => {
+    if (event.button !== 0 && event.pointerType === 'mouse') return; // 只响应左键
+    const rect = toggle.getBoundingClientRect();
+    startClientX = event.clientX;
+    startClientY = event.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    // 第一次按下就把元素切换为 left/top 定位，保证拖拽流畅
+    toggle.style.left = `${startLeft}px`;
+    toggle.style.top = `${startTop}px`;
+    toggle.style.bottom = 'auto';
+    toggle.style.right = 'auto';
+    dragging = true;
+    moved = false;
+    toggle.style.cursor = 'grabbing';
+    try {
+      toggle.setPointerCapture(event.pointerId);
+    } catch {
+      /* 个别环境不支持 capture，仍可拖拽 */
+    }
+    event.preventDefault();
+  });
+
+  toggle.addEventListener('pointermove', (event: PointerEvent) => {
+    if (!dragging) return;
+    const dx = event.clientX - startClientX;
+    const dy = event.clientY - startClientY;
+    if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) moved = true;
+    const x = startLeft + dx;
+    const y = startTop + dy;
+    // 限制在视口内，避免拖出屏幕
+    const maxX = Math.max(0, window.innerWidth - toggle.offsetWidth);
+    const maxY = Math.max(0, window.innerHeight - toggle.offsetHeight);
+    toggle.style.left = `${Math.min(Math.max(0, x), maxX)}px`;
+    toggle.style.top = `${Math.min(Math.max(0, y), maxY)}px`;
+    event.preventDefault();
+  });
+
+  const endDrag = (event: PointerEvent): void => {
+    if (!dragging) return;
+    dragging = false;
+    toggle.style.cursor = 'grab';
+    try {
+      toggle.releasePointerCapture(event.pointerId);
+    } catch {
+      /* 忽略 */
+    }
+    const rect = toggle.getBoundingClientRect();
+    if (moved) {
+      // 拖拽结束：把当前位置交给定位函数并记住
+      positionToggle(rect.left, rect.top);
+    } else {
+      // 位移很小视为点击：展开面板
+      applyCollapsed(false);
+    }
+  };
+  toggle.addEventListener('pointerup', endDrag);
+  toggle.addEventListener('pointercancel', endDrag);
+
   (doc.body || doc.documentElement).appendChild(toggle);
 
   // ---- 展开态悬浮窗 ----
@@ -199,8 +284,9 @@ function installPanel(): void {
 
   (doc.body || doc.documentElement).appendChild(panel);
 
-  // 恢复上次展开/收起偏好（默认收起为小圆钮）
-  applyCollapsed(readCollapsed());
+  // 每次加载页面固定默认收起：只显示右下角「主线」小球（用户要求）
+  applyCollapsed(true);
+  console.log('[主线设计] 初始状态=收起（右下角「主线」悬浮球），点击展开面板。');
   console.log(`[主线设计] 悬浮面板已安装（#${MAINLINE_PANEL_ID} / #${MAINLINE_TOGGLE_ID}）`);
 }
 
