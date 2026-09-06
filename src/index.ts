@@ -37,8 +37,8 @@ const PANEL_TITLE = '主线设计';
 /** 最长等待宿主就绪的时间（毫秒） */
 const MAX_WAIT_MS = 15000;
 
-/** 面板展开/收起状态在 localStorage 中的键（纯 UI 偏好） */
-const COLLAPSED_STORAGE_KEY = 'stml:panel:collapsed';
+/** 面板展开/收起状态在 localStorage 中的键（纯 UI 偏好；v2：默认收起） */
+const COLLAPSED_STORAGE_KEY = 'stml:panel:collapsed:v2';
 
 /**
  * 等待宿主就绪：轮询 window.SillyTavern.getContext 是否可用（并可读到
@@ -83,9 +83,10 @@ function installPanel(): void {
   // 幂等：已存在则跳过
   if (doc.getElementById(MAINLINE_PANEL_ID) || doc.getElementById(MAINLINE_TOGGLE_ID)) return;
 
+  // 默认收起（true），只有用户显式展开过（localStorage 存 '0'）才默认展开
   const readCollapsed = (): boolean => {
     try {
-      return localStorage.getItem(COLLAPSED_STORAGE_KEY) === '1';
+      return localStorage.getItem(COLLAPSED_STORAGE_KEY) !== '0';
     } catch {
       return true;
     }
@@ -182,8 +183,19 @@ function installPanel(): void {
 
   panel.appendChild(titleBar);
 
-  // 页签内容（各功能模块注册的页签在此渲染）
-  mountPanel(panel);
+  // 版本信息栏（便于确认当前运行的是否为最新构建）
+  const versionLine = doc.createElement('div');
+  versionLine.textContent = 'v0.1.0 · 2026-09-06';
+  versionLine.style.fontSize = '11px';
+  versionLine.style.color = '#8a8a94';
+  versionLine.style.marginBottom = '6px';
+  panel.appendChild(versionLine);
+
+  // 页签区独立容器：mountPanel 内部会 replaceChildren，绝不能传整个 panel
+  // （否则会把上面的标题栏/版本行清空），必须挂到专属子容器上。
+  const panelBody = doc.createElement('div');
+  panel.appendChild(panelBody);
+  mountPanel(panelBody);
 
   (doc.body || doc.documentElement).appendChild(panel);
 
