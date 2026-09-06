@@ -143,7 +143,7 @@ function installPanel(): void {
   panel.style.fontSize = '13px';
   panel.style.fontFamily = 'inherit';
 
-  // 标题栏：标题 + 「收起」按钮
+  // 标题栏：标题（点击也可收起）+ 「收起」按钮
   const titleBar = doc.createElement('div');
   titleBar.style.display = 'flex';
   titleBar.style.alignItems = 'center';
@@ -154,18 +154,29 @@ function installPanel(): void {
   title.textContent = PANEL_TITLE;
   title.style.fontWeight = 'bold';
   title.style.fontSize = '14px';
+  title.style.cursor = 'pointer';
+  title.style.userSelect = 'none';
+  title.title = '点击收成右下角小圆钮';
+  title.addEventListener('click', () => applyCollapsed(true));
   titleBar.appendChild(title);
 
   const collapseBtn = doc.createElement('button');
-  collapseBtn.textContent = '收起 —';
-  collapseBtn.title = '收成右下角小圆钮';
-  collapseBtn.style.padding = '2px 8px';
+  collapseBtn.textContent = '收起';
+  collapseBtn.title = '点击收成右下角小圆钮';
+  collapseBtn.style.padding = '3px 12px';
   collapseBtn.style.borderRadius = '4px';
-  collapseBtn.style.border = '1px solid #4a4a52';
-  collapseBtn.style.background = '#2a2a32';
-  collapseBtn.style.color = '#e8e8ec';
+  collapseBtn.style.border = '1px solid #5a6a7a';
+  collapseBtn.style.background = '#3a4a5a';
+  collapseBtn.style.color = '#fff';
   collapseBtn.style.cursor = 'pointer';
   collapseBtn.style.fontSize = '12px';
+  collapseBtn.style.fontWeight = 'bold';
+  collapseBtn.addEventListener('mouseenter', () => {
+    collapseBtn.style.background = '#4a5a6a';
+  });
+  collapseBtn.addEventListener('mouseleave', () => {
+    collapseBtn.style.background = '#3a4a5a';
+  });
   collapseBtn.addEventListener('click', () => applyCollapsed(true));
   titleBar.appendChild(collapseBtn);
 
